@@ -27,26 +27,34 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 export default function RootLayout() {
   useFrameworkReady();
 
-  const [spaceFontsLoaded] = useSpaceGrotesk({
+  const [spaceFontsLoaded, spaceFontError] = useSpaceGrotesk({
     SpaceGrotesk_400Regular,
     SpaceGrotesk_500Medium,
     SpaceGrotesk_700Bold,
   });
 
-  const [interFontsLoaded] = useInter({
+  const [interFontsLoaded, interFontError] = useInter({
     Inter_400Regular,
     Inter_500Medium,
     Inter_600SemiBold,
     Inter_700Bold,
   });
 
-  const fontsLoaded = spaceFontsLoaded && interFontsLoaded;
+  const fontsLoaded = (spaceFontsLoaded || spaceFontError !== null) && (interFontsLoaded || interFontError !== null);
 
   useEffect(() => {
     if (fontsLoaded) {
       SplashScreen.hideAsync().catch(() => {});
     }
   }, [fontsLoaded]);
+
+  // Fallback timer to ensure splash screen hides on mobile devices even if font loading hangs
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      SplashScreen.hideAsync().catch(() => {});
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, []);
 
   return (
     <CartProvider>
