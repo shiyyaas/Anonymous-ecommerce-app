@@ -1,0 +1,160 @@
+name: Release Pipeline
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.gitignore'
+
+concurrency:
+  group: release-production
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build Android & Publish Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js (LTS 20)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: TypeScript validation
+        run: npx tsc --noEmit
+
+      - name: Calculate Next Version
+        id: versioning
+        run: node scripts/bump-version.js
+
+      - name: Set Android Version Code
+        run: |
+          node -e '
+            const fs = require("fs");
+            const app = JSON.parse(fs.readFileSync("app.json", "utf8"));
+            if (!app.expo.android) app.expo.android = {};
+            app.expo.android.versionCode = ${{ github.run_number }};
+            fs.writeFileSync("app.json", JSON.stringify(app, null, 2) + "\n");
+          '
+
+      - name: Validate Expo Config
+        run: npx expo config --type public
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Generate Native Android Project
+        run: npx expo prebuild --platform android --clean --no-install
+
+      - name: Determine Signing Mode & Prepare Keystore
+        id: signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ] && [ -n "$KEYSTORE_PASSWORD" ] && [ -n "$KEY_ALIAS" ] && [ -n "$KEY_PASSWORD" ]; then
+            echo "has_signing=true" >> $GITHUB_OUTPUT
+            echo "RELEASE_TYPE=Production Release" >> $GITHUB_OUTPUT
+            echo "Building signed release artifact..."
+            echo "$KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
+            cat << 'EOF' >> android/app/build.gradle
+
+android {
+    signingConfigs {
+        release {
+            storeFile file("release.keystore")
+            storePassword System.getenv("KEYSTORE_PASSWORD")
+            keyAlias System.getenv("KEY_ALIAS")
+            keyPassword System.getenv("KEY_PASSWORD")
+        }
+    }
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+        }
+    }
+}
+EOF
+          else
+            echo "has_signing=false" >> $GITHUB_OUTPUT
+            echo "RELEASE_TYPE=Debug / Unsigned (Evaluation Only)" >> $GITHUB_OUTPUT
+            echo "No production keystore secrets configured. Falling back to debug-signed APK."
+          fi
+
+      - name: Build Android APK
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          cd android
+          chmod +x gradlew
+          if [ "${{ steps.signing.outputs.has_signing }}" = "true" ]; then
+            ./gradlew assembleRelease --no-daemon
+            cp app/build/outputs/apk/release/app-release.apk ../ANONYMOUS-${{ steps.versioning.outputs.tag }}.apk
+          else
+            ./gradlew assembleDebug --no-daemon
+            cp app/build/outputs/apk/debug/app-debug.apk ../ANONYMOUS-${{ steps.versioning.outputs.tag }}-debug.apk
+          fi
+          cd ..
+
+      - name: Generate Release Notes
+        id: notes
+        run: |
+          VERSION="${{ steps.versioning.outputs.tag }}"
+          IS_SIGNED="${{ steps.signing.outputs.has_signing }}"
+
+          cat << EOF > release_notes.md
+          # ANONYMOUS Release ${VERSION}
+
+          ## Build Artifacts
+          EOF
+
+          if [ "$IS_SIGNED" = "true" ]; then
+            echo "- **Artifact**: \`ANONYMOUS-${VERSION}.apk\` (Signed Production Build)" >> release_notes.md
+            echo "- **Status**: Verified and cryptographically signed with release keystore." >> release_notes.md
+          else
+            echo "- **Artifact**: \`ANONYMOUS-${VERSION}-debug.apk\`" >> release_notes.md
+            echo "- **Status**: **unsigned/debug — not for Play Store**" >> release_notes.md
+            echo "> ⚠️ **Notice**: This build is signed with the Android debug key for testing/evaluation. For production Play Store distribution, configure repository secrets (\`ANDROID_KEYSTORE_BASE64\`, etc.)." >> release_notes.md
+          fi
+
+          cat << 'EOF' >> release_notes.md
+
+          ## Changelog
+          Automated release generated from merged commits on branch \`main\`.
+          EOF
+
+      - name: Tag and Publish GitHub Release
+        uses: softprops/action-gh-release@c062e4933a92ee5a2bf409ee9306b8e8fcc0d494
+        with:
+          tag_name: ${{ steps.versioning.outputs.tag }}
+          name: ANONYMOUS ${{ steps.versioning.outputs.tag }}
+          body_path: release_notes.md
+          files: |
+            ANONYMOUS-*.apk
+          draft: false
+          prerelease: ${{ steps.signing.outputs.has_signing == 'false' }}
