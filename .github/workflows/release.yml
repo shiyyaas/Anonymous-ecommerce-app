@@ -120,6 +120,9 @@ jobs:
             echo "No production keystore secrets configured. Falling back to debug-signed APK."
           fi
 
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
       - name: Build Android APK
         env:
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
