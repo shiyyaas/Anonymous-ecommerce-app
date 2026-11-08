@@ -25,6 +25,19 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          fetch-tags: true
+
+      # Ensures at least one tag exists so version scripts don't fail with
+      # "fatal: No names found, cannot describe anything."
+      - name: Ensure baseline Git tag exists
+        run: |
+          if [ -z "$(git tag --list)" ]; then
+            echo "No tags found. Creating local baseline tag v0.0.0"
+            git tag v0.0.0
+          else
+            echo "Existing tags found:"
+            git tag --list
+          fi
 
       - name: Setup Node.js (LTS 20)
         uses: actions/setup-node@v4
@@ -61,13 +74,11 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      # FIX: packages must be ONE space-separated string, not a multi-line block.
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: |
-            platform-tools
-            platforms;android-35
-            build-tools;35.0.0
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
 
       - name: Generate Native Android Project
         run: npx expo prebuild --platform android --clean --no-install
@@ -131,11 +142,9 @@ jobs:
         run: |
           VERSION="${{ steps.versioning.outputs.tag }}"
           IS_SIGNED="${{ steps.signing.outputs.has_signing }}"
-
           echo "# ANONYMOUS Release ${VERSION}" > release_notes.md
           echo "" >> release_notes.md
           echo "## Build Artifacts" >> release_notes.md
-
           if [ "$IS_SIGNED" = "true" ]; then
             echo "- **Artifact**: \`ANONYMOUS-${VERSION}.apk\` (Signed Production Build)" >> release_notes.md
             echo "- **Status**: Verified and cryptographically signed with release keystore." >> release_notes.md
@@ -144,7 +153,6 @@ jobs:
             echo "- **Status**: **unsigned/debug — not for Play Store**" >> release_notes.md
             echo "> ⚠️ **Notice**: This build is signed with the Android debug key for testing/evaluation. For production Play Store distribution, configure repository secrets (\`ANDROID_KEYSTORE_BASE64\`, etc.)." >> release_notes.md
           fi
-
           echo "" >> release_notes.md
           echo "## Changelog" >> release_notes.md
           echo "Automated release generated from merged commits on branch \`main\`." >> release_notes.md
