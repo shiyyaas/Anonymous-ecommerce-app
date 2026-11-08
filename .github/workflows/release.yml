@@ -116,27 +116,37 @@ jobs:
             } >> android/app/build.gradle
           else
             echo "has_signing=false" >> $GITHUB_OUTPUT
-            echo "RELEASE_TYPE=Debug / Unsigned (Evaluation Only)" >> $GITHUB_OUTPUT
-            echo "No production keystore secrets configured. Falling back to debug-signed APK."
+            echo "RELEASE_TYPE=Debug-Signed Release (Evaluation Only)" >> $GITHUB_OUTPUT
+            echo "No production keystore secrets configured. Configuring release build to sign with debug keystore."
+            {
+              echo ""
+              echo "android {"
+              echo "    buildTypes {"
+              echo "        release {"
+              echo "            signingConfig signingConfigs.debug"
+              echo "        }"
+              echo "    }"
+              echo "}"
+            } >> android/app/build.gradle
           fi
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Build Android APK
+      - name: Bundle JS and Assets & Build Android APK
         env:
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
+          npx expo export --platform android
           cd android
           chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
           if [ "${{ steps.signing.outputs.has_signing }}" = "true" ]; then
-            ./gradlew assembleRelease --no-daemon
             cp app/build/outputs/apk/release/app-release.apk ../ANONYMOUS-${{ steps.versioning.outputs.tag }}.apk
           else
-            ./gradlew assembleDebug --no-daemon
-            cp app/build/outputs/apk/debug/app-debug.apk ../ANONYMOUS-${{ steps.versioning.outputs.tag }}-debug.apk
+            cp app/build/outputs/apk/release/app-release.apk ../ANONYMOUS-${{ steps.versioning.outputs.tag }}-debug.apk
           fi
           cd ..
 
