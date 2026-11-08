@@ -145,7 +145,7 @@ jobs:
           echo "Automated release generated from merged commits on branch \`main\`." >> release_notes.md
 
       - name: Tag and Publish GitHub Release
-        uses: softprops/action-gh-release@c062e4933a92ee5a2bf409ee9306b8e8fcc0d494
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.versioning.outputs.tag }}
           name: ANONYMOUS ${{ steps.versioning.outputs.tag }}
