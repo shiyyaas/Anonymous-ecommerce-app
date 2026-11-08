@@ -80,24 +80,24 @@ jobs:
             echo "RELEASE_TYPE=Production Release" >> $GITHUB_OUTPUT
             echo "Building signed release artifact..."
             echo "$KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
-            cat << 'EOF' >> android/app/build.gradle
-
-android {
-    signingConfigs {
-        release {
-            storeFile file("release.keystore")
-            storePassword System.getenv("KEYSTORE_PASSWORD")
-            keyAlias System.getenv("KEY_ALIAS")
-            keyPassword System.getenv("KEY_PASSWORD")
-        }
-    }
-    buildTypes {
-        release {
-            signingConfig signingConfigs.release
-        }
-    }
-}
-EOF
+            {
+              echo ""
+              echo "android {"
+              echo "    signingConfigs {"
+              echo "        release {"
+              echo "            storeFile file(\"release.keystore\")"
+              echo "            storePassword System.getenv(\"KEYSTORE_PASSWORD\")"
+              echo "            keyAlias System.getenv(\"KEY_ALIAS\")"
+              echo "            keyPassword System.getenv(\"KEY_PASSWORD\")"
+              echo "        }"
+              echo "    }"
+              echo "    buildTypes {"
+              echo "        release {"
+              echo "            signingConfig signingConfigs.release"
+              echo "        }"
+              echo "    }"
+              echo "}"
+            } >> android/app/build.gradle
           else
             echo "has_signing=false" >> $GITHUB_OUTPUT
             echo "RELEASE_TYPE=Debug / Unsigned (Evaluation Only)" >> $GITHUB_OUTPUT
@@ -127,11 +127,9 @@ EOF
           VERSION="${{ steps.versioning.outputs.tag }}"
           IS_SIGNED="${{ steps.signing.outputs.has_signing }}"
 
-          cat << EOF > release_notes.md
-          # ANONYMOUS Release ${VERSION}
-
-          ## Build Artifacts
-          EOF
+          echo "# ANONYMOUS Release ${VERSION}" > release_notes.md
+          echo "" >> release_notes.md
+          echo "## Build Artifacts" >> release_notes.md
 
           if [ "$IS_SIGNED" = "true" ]; then
             echo "- **Artifact**: \`ANONYMOUS-${VERSION}.apk\` (Signed Production Build)" >> release_notes.md
@@ -142,11 +140,9 @@ EOF
             echo "> ⚠️ **Notice**: This build is signed with the Android debug key for testing/evaluation. For production Play Store distribution, configure repository secrets (\`ANDROID_KEYSTORE_BASE64\`, etc.)." >> release_notes.md
           fi
 
-          cat << 'EOF' >> release_notes.md
-
-          ## Changelog
-          Automated release generated from merged commits on branch \`main\`.
-          EOF
+          echo "" >> release_notes.md
+          echo "## Changelog" >> release_notes.md
+          echo "Automated release generated from merged commits on branch \`main\`." >> release_notes.md
 
       - name: Tag and Publish GitHub Release
         uses: softprops/action-gh-release@c062e4933a92ee5a2bf409ee9306b8e8fcc0d494
