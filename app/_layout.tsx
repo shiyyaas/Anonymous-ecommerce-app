@@ -3,6 +3,7 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { CartProvider } from '@/context/CartContext';
 import { WishlistProvider } from '@/context/WishlistContext';
+import { AppProvider } from '@/context/AppContext';
 import { useFrameworkReady } from '@/hooks/useFrameworkReady';
 import {
   useFonts as useSpaceGrotesk,

@@ -1,9 +1,10 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { cartItems as initialCartItems } from '@/data/cart';
-import { featuredProducts, wishlistProducts as initialWishlistProducts } from '@/data/products';
+import { featuredProducts, flashSaleProducts, wishlistProducts } from '@/data/products';
 import { Product } from '@/types/product';
 import { CartItem } from '@/types/cart';
 import { Alert, Dimensions } from 'react-native';
+import { useCart } from '@/context/CartContext';
+import { useWishlist } from '@/context/WishlistContext';
 
 interface AppContextType {
   // Cart
@@ -39,11 +40,21 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  // Cart state
-  const [cartItems, setCartItems] = useState<CartItem[]>(initialCartItems);
+  const {
+    cartItems,
+    addToCart: cartAddToCart,
+    removeFromCart: cartRemoveFromCart,
+    updateQuantity: updateCartItemQuantity,
+    clearCart,
+    totalPrice: cartTotal
+  } = useCart();
 
-  // Wishlist state
-  const [wishlistItems, setWishlistItems] = useState<Product[]>(initialWishlistProducts);
+  const {
+    wishlistItems,
+    addToWishlist: wishlistAddToWishlist,
+    removeFromWishlist,
+    isInWishlist
+  } = useWishlist();
 
   // Products state
   const [products, setProducts] = useState<Product[]>(featuredProducts);
@@ -75,30 +86,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return () => subscription.remove();
   }, []);
 
-  // Calculate cart total
-  const cartTotal = cartItems.reduce(
-    (total, item) => total + item.price * item.quantity,
-    0
-  );
-
-  // Add item to cart
+  // Add item to cart with alert matching AppContext behavior
   const addToCart = (product: Product, quantity: number = 1) => {
-    console.log('addToCart called with:', product);
     const existingItem = cartItems.find(item => item.id === product.id);
+    cartAddToCart(product, quantity);
 
     if (existingItem) {
-      updateCartItemQuantity(product.id, existingItem.quantity + quantity);
       Alert.alert('Success', `Updated ${product.name} quantity in cart (${existingItem.quantity + quantity} total)`);
     } else {
-      const newItem: CartItem = {
-        id: product.id,
-        name: product.name,
-        price: product.price,
-        image: product.image,
-        quantity: quantity
-      };
-
-      setCartItems([...cartItems, newItem]);
       Alert.alert('Added to Cart!', `${product.name} has been added to your cart.`, [
         { text: 'Continue Shopping', style: 'cancel' },
         { text: 'View Cart', onPress: () => {} }
@@ -106,34 +101,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  // Remove item from cart
   const removeFromCart = (productId: string) => {
-    setCartItems(cartItems.filter(item => item.id !== productId));
+    cartRemoveFromCart(productId);
   };
 
-  // Clear entire cart
-  const clearCart = () => {
-    setCartItems([]);
-  };
-
-  // Update cart item quantity
-  const updateCartItemQuantity = (productId: string, quantity: number) => {
-    if (quantity <= 0) {
-      removeFromCart(productId);
-      return;
-    }
-
-    setCartItems(
-      cartItems.map(item =>
-        item.id === productId ? { ...item, quantity } : item
-      )
-    );
-  };
-
-  // Add product to wishlist
   const addToWishlist = (product: Product) => {
     if (!isInWishlist(product.id)) {
-      setWishlistItems([...wishlistItems, { ...product, isFavorite: true }]);
+      wishlistAddToWishlist(product);
       Alert.alert('Added to Wishlist!', `${product.name} has been saved to your wishlist.`, [
         { text: 'Continue', style: 'cancel' },
         { text: 'View Wishlist', onPress: () => {} }
@@ -141,23 +115,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  // Remove product from wishlist
-  const removeFromWishlist = (productId: string) => {
-    setWishlistItems(wishlistItems.filter(item => item.id !== productId));
-  };
-
-  // Check if product is in wishlist
-  const isInWishlist = (productId: string) => {
-    return wishlistItems.some(item => item.id === productId);
-  };
-
   // Get product by ID
   const getProductById = (id: string) => {
-    // Search all product arrays for the given ID
     const allProducts = [
       ...products,
-      ...require('@/data/products').flashSaleProducts,
-      ...require('@/data/products').wishlistProducts
+      ...flashSaleProducts,
+      ...wishlistProducts
     ];
     return allProducts.find(product => product.id === id);
   };
